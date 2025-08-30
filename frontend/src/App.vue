@@ -1,6 +1,6 @@
 <template>
   <el-container class="main-container">
-    <el-header ref="headerRef" class="header">
+    <el-header class="header">
       <div class="logo-title">
         <DataAnalysis class="icon"/>
         <h1>基于大小模型协同的电力数据智能分析</h1>
@@ -9,7 +9,6 @@
 
     <el-main ref="mainRef" class="main-content">
       <el-row :gutter="20" style="height: 100%">
-        <!-- 上传区 -->
         <el-col :span="8" style="height: 100%">
           <el-card class="box-card" shadow="always">
             <template #header>
@@ -51,13 +50,12 @@
           </el-card>
         </el-col>
 
-        <!-- 报告区 -->
         <el-col :span="16" style="height: 100%">
           <el-card
               class="box-card report-card"
               shadow="always"
               v-loading="isLoading"
-              :body-class="'report-body'"
+              :body-style="{ padding: 0, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }"
               ref="reportCardRef"
           >
             <template #header>
@@ -70,7 +68,6 @@
               </div>
             </template>
 
-            <!-- 关键：把 height 设为计算出的 px 字符串 -->
             <el-scrollbar
                 ref="reportScrollbar"
                 class="report-scroll"
@@ -88,16 +85,17 @@
 
 <script setup lang="ts">
 import {ref, computed, watch, nextTick, onMounted, onBeforeUnmount} from 'vue';
+import type {ComponentPublicInstance} from 'vue';
 import type {UploadInstance, UploadProps, UploadRawFile, UploadUserFile} from 'element-plus';
 import {ElMessage} from 'element-plus';
 import {DataAnalysis, UploadFilled, Document, Download} from '@element-plus/icons-vue';
 import {marked} from 'marked';
+// 确保这个路径是正确的，相对于 App.vue 文件
 import {analyzeFiles, downloadPdf} from './services/ApiService';
 
 // refs for DOM & components
-const headerRef = ref<HTMLElement | null>(null);
-const mainRef = ref<HTMLElement | null>(null);
-const reportCardRef = ref<HTMLElement | null>(null);
+const mainRef = ref<ComponentPublicInstance | null>(null);
+const reportCardRef = ref<ComponentPublicInstance | null>(null);
 const uploadRef = ref<UploadInstance | null>(null);
 const reportScrollbar = ref<any>(null);
 
@@ -111,36 +109,33 @@ const reportMarkdown = ref('');
 // computed html
 const reportHtml = computed(() => {
   if (reportMarkdown.value) {
-    marked.setOptions({breaks: true});
+    marked.setOptions({breaks: true, gfm: true});
     return marked(reportMarkdown.value);
   }
   return '';
 });
 
-// height string to pass into el-scrollbar, default to some px to be safe
-const scrollbarHeight = ref('640px');
+// height string to pass into el-scrollbar
+const scrollbarHeight = ref('600px');
 
-// helper to compute available height for scrollbar in pixels
 function computeScrollbarHeight() {
-  // ensure required refs exist
-  const mainEl = mainRef.value;
-  const headerEl = headerRef.value;
-  const reportCardEl = reportCardRef.value;
-  if (!mainEl || !headerEl || !reportCardEl) {
+  const mainEl = mainRef.value?.$el as HTMLElement;
+  const reportCardDomEl = reportCardRef.value?.$el as HTMLElement;
+
+  if (!mainEl || !reportCardDomEl) {
     return;
   }
 
-  // main area height (already subtracts header since main is below header)
   const mainRect = mainEl.getBoundingClientRect();
 
-  // find the card header (title + buttons) height inside the report card
-  const cardHeaderEl = reportCardEl.querySelector('.report-card-header') as HTMLElement | null;
-  const cardHeaderHeight = cardHeaderEl ? cardHeaderEl.getBoundingClientRect().height : 0;
+  const cardHeaderEl = reportCardDomEl.querySelector('.report-card-header') as HTMLElement | null;
 
-  // account for report-card body paddings if any; we set none, but keep a small margin safe area
-  const safePadding = 24; // px
+  // 提供一个默认高度以增加健壮性
+  const cardHeaderHeight = cardHeaderEl ? cardHeaderEl.getBoundingClientRect().height : 48;
 
-  // available height for el-scrollbar = mainRect.height - cardHeaderHeight - safePadding
+  // 卡片主体区域有默认的 padding，这里设为0，但保留安全边距
+  const safePadding = 24;
+
   const available = Math.max(120, Math.floor(mainRect.height - cardHeaderHeight - safePadding));
   scrollbarHeight.value = `${available}px`;
 }
@@ -149,23 +144,25 @@ function computeScrollbarHeight() {
 let ro: ResizeObserver | null = null;
 
 function startResizeObserver() {
-  if (mainRef.value) {
-    ro = new ResizeObserver(() => {
-      computeScrollbarHeight();
-    });
-    ro.observe(mainRef.value);
-  }
-  // also listen window resize as fallback
-  window.addEventListener('resize', computeScrollbarHeight);
+    const mainEl = mainRef.value?.$el;
+    if (mainEl) {
+        ro = new ResizeObserver(() => {
+            computeScrollbarHeight();
+        });
+        ro.observe(mainEl);
+    }
+    window.addEventListener('resize', computeScrollbarHeight);
 }
 
 function stopResizeObserver() {
-  if (ro && mainRef.value) {
-    ro.unobserve(mainRef.value);
-    ro = null;
-  }
-  window.removeEventListener('resize', computeScrollbarHeight);
+    const mainEl = mainRef.value?.$el;
+    if (ro && mainEl) {
+        ro.unobserve(mainEl);
+        ro = null;
+    }
+    window.removeEventListener('resize', computeScrollbarHeight);
 }
+
 
 // file handlers
 const handleFileChange: UploadProps['onChange'] = (_uploadFile, uploadFiles) => {
@@ -238,7 +235,6 @@ watch(reportMarkdown, async () => {
 });
 
 onMounted(() => {
-  // compute initial size after DOM paint
   nextTick(() => {
     computeScrollbarHeight();
     startResizeObserver();
@@ -296,46 +292,40 @@ onBeforeUnmount(() => {
   flex-direction: column;
 }
 
-/* 上传区 */
 .upload-area {
   display: flex;
   flex-direction: column;
   flex-grow: 1;
 }
 
-
-/* 报告区关键样式：card body 作为可收缩 flex 项 */
 .report-card {
   height: 100%;
   display: flex;
   flex-direction: column;
 }
 
-/* el-scrollbar 外层：flex 子项，可收缩 */
 .report-scroll {
+  /* This ensures the scrollbar itself can shrink */
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
 }
 
-/* 真正滚动的内容层 */
 .scroll-content {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
   padding: 20px;
-  box-sizing: border-box;
   line-height: 1.8;
+  word-wrap: break-word;
 }
 
-/* 卡片头部（含按钮）的样式，便于测量高度 */
-.report-card-header {
+.card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 20px;
-  box-sizing: border-box;
 }
 
+/* Markdown specific styles */
+.markdown-body {
+  /* Add your markdown styles here */
+  /* For example: */
+  font-family: -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
+}
 </style>
