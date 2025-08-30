@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  # 后端服务定义
+  backend:
+    build:
+      context: .  # 使用项目根目录作为构建上下文
+      dockerfile: backend/Dockerfile  # 指明Dockerfile的位置
+    container_name: dqct_backend
+    # 将本地配置文件和.env挂载到容器中，方便实时修改配置而无需重启
+    volumes:
+      - ./config.yaml:/config.yaml
+      - ./.env:/app/.env
+    # 环境变量，让Python日志直接输出
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  # 前端服务定义
+  frontend:
+    build: ./frontend
+    container_name: dqct_frontend
+    ports:
+      # 将用户主机的8080端口映射到容器的80端口
+      # 用户将通过 http://localhost:8080 访问
+      - "8080:80"
+    # 确保前端在后端启动之后再启动
+    depends_on:
+      - backend

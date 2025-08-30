@@ -118,7 +118,7 @@ const reportHtml = computed(() => {
 });
 
 // height string to pass into el-scrollbar, default to some px to be safe
-const scrollbarHeight = ref('720px');
+const scrollbarHeight = ref('640px');
 
 // helper to compute available height for scrollbar in pixels
 function computeScrollbarHeight() {
