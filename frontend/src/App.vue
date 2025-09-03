@@ -56,7 +56,6 @@
               shadow="always"
               v-loading="isLoading"
               :body-style="{ padding: 0, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }"
-              ref="reportCardRef"
           >
             <template #header>
               <div class="card-header report-card-header">
@@ -71,7 +70,7 @@
             <el-scrollbar
                 ref="reportScrollbar"
                 class="report-scroll"
-                :height="scrollbarHeight"
+                height="100%"
             >
               <div v-if="reportMarkdown" v-html="reportHtml" class="scroll-content markdown-body"></div>
               <el-empty v-else description="请先上传文件并开始分析"/>
@@ -84,87 +83,35 @@
 </template>
 
 <script setup lang="ts">
-import {ref, computed, watch, nextTick, onMounted, onBeforeUnmount} from 'vue';
-import type {ComponentPublicInstance} from 'vue';
-import type {UploadInstance, UploadProps, UploadRawFile, UploadUserFile} from 'element-plus';
-import {ElMessage} from 'element-plus';
-import {DataAnalysis, UploadFilled, Document, Download} from '@element-plus/icons-vue';
-import {marked} from 'marked';
-// 确保这个路径是正确的，相对于 App.vue 文件
-import {analyzeFiles, downloadPdf} from './services/ApiService';
+import { ref, computed, watch, nextTick } from 'vue';
+import type { UploadInstance, UploadProps, UploadRawFile, UploadUserFile } from 'element-plus';
+import { ElMessage } from 'element-plus';
+import { DataAnalysis, UploadFilled, Document, Download } from '@element-plus/icons-vue';
+import { marked } from 'marked';
+import { analyzeFiles, downloadPdf } from './services/ApiService';
 
-// refs for DOM & components
-const mainRef = ref<ComponentPublicInstance | null>(null);
-const reportCardRef = ref<ComponentPublicInstance | null>(null);
+// refs for components
 const uploadRef = ref<UploadInstance | null>(null);
 const reportScrollbar = ref<any>(null);
 
-// files
+// 文件状态
 const filesToUpload = ref<UploadRawFile[]>([]);
 const fileListForDisplay = ref<UploadUserFile[]>([]);
 
+// 应用状态
 const isLoading = ref(false);
 const reportMarkdown = ref('');
 
-// computed html
+// 将 Markdown 转换为 HTML
 const reportHtml = computed(() => {
   if (reportMarkdown.value) {
-    marked.setOptions({breaks: true, gfm: true});
+    marked.setOptions({ breaks: true, gfm: true });
     return marked(reportMarkdown.value);
   }
   return '';
 });
 
-// height string to pass into el-scrollbar
-const scrollbarHeight = ref('600px');
-
-function computeScrollbarHeight() {
-  const mainEl = mainRef.value?.$el as HTMLElement;
-  const reportCardDomEl = reportCardRef.value?.$el as HTMLElement;
-
-  if (!mainEl || !reportCardDomEl) {
-    return;
-  }
-
-  const mainRect = mainEl.getBoundingClientRect();
-
-  const cardHeaderEl = reportCardDomEl.querySelector('.report-card-header') as HTMLElement | null;
-
-  // 提供一个默认高度以增加健壮性
-  const cardHeaderHeight = cardHeaderEl ? cardHeaderEl.getBoundingClientRect().height : 48;
-
-  // 卡片主体区域有默认的 padding，这里设为0，但保留安全边距
-  const safePadding = 24;
-
-  const available = Math.max(120, Math.floor(mainRect.height - cardHeaderHeight - safePadding));
-  scrollbarHeight.value = `${available}px`;
-}
-
-// resize handling
-let ro: ResizeObserver | null = null;
-
-function startResizeObserver() {
-    const mainEl = mainRef.value?.$el;
-    if (mainEl) {
-        ro = new ResizeObserver(() => {
-            computeScrollbarHeight();
-        });
-        ro.observe(mainEl);
-    }
-    window.addEventListener('resize', computeScrollbarHeight);
-}
-
-function stopResizeObserver() {
-    const mainEl = mainRef.value?.$el;
-    if (ro && mainEl) {
-        ro.unobserve(mainEl);
-        ro = null;
-    }
-    window.removeEventListener('resize', computeScrollbarHeight);
-}
-
-
-// file handlers
+// 文件处理回调
 const handleFileChange: UploadProps['onChange'] = (_uploadFile, uploadFiles) => {
   filesToUpload.value = uploadFiles.map(f => f.raw as UploadRawFile);
   fileListForDisplay.value = uploadFiles;
@@ -176,7 +123,7 @@ const handleFileRemove: UploadProps['onRemove'] = (uploadFile, uploadFiles) => {
   ElMessage.info(`文件 "${uploadFile.name}" 已被移除。`);
 };
 
-// analysis
+// 开始分析
 const startAnalysis = async () => {
   if (filesToUpload.value.length < 2) {
     ElMessage.warning('请确保已上传至少两个文件。');
@@ -203,9 +150,9 @@ const startAnalysis = async () => {
   }
 };
 
-// downloads
+// 下载功能
 const downloadMD = () => {
-  const blob = new Blob([reportMarkdown.value], {type: 'text/markdown;charset=utf-8'});
+  const blob = new Blob([reportMarkdown.value], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -224,25 +171,10 @@ const downloadPDF = async () => {
   }
 };
 
-// update scrollbar after markdown content mounts/changes
+// 当报告内容更新时，通知滚动条组件更新其内部状态，以确保滚动条正确
 watch(reportMarkdown, async () => {
   await nextTick();
-  try {
-    reportScrollbar.value?.update?.();
-  } catch (e) {
-    // ignore
-  }
-});
-
-onMounted(() => {
-  nextTick(() => {
-    computeScrollbarHeight();
-    startResizeObserver();
-  });
-});
-
-onBeforeUnmount(() => {
-  stopResizeObserver();
+  reportScrollbar.value?.update();
 });
 </script>
 
@@ -285,7 +217,7 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
 }
 
-/* card 充满列高度 */
+/* card 充满列高度，并设置为 flex 容器 */
 .box-card {
   height: 100%;
   display: flex;
@@ -305,7 +237,7 @@ onBeforeUnmount(() => {
 }
 
 .report-scroll {
-  /* This ensures the scrollbar itself can shrink */
+  /* 此样式确保滚动条本身可以收缩，但现在已不再严格需要，因为高度是 100% */
   flex: 1;
   min-height: 0;
 }
@@ -324,8 +256,6 @@ onBeforeUnmount(() => {
 
 /* Markdown specific styles */
 .markdown-body {
-  /* Add your markdown styles here */
-  /* For example: */
   font-family: -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
 }
 </style>
