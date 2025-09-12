@@ -1,0 +1,20 @@
+services:
+  backend:
+    image: dqctv2-backend:latest
+    container_name: dqct_backend
+    restart: always
+    volumes:
+      - ./config.yaml:/config.yaml
+      - ./.env:/app/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  frontend:
+    image: dqctv2-frontend:latest
+    container_name: dqct_frontend
+    restart: always
+    ports:
+      # 在服务器上，按需修改前面的端口
+      - "18600:80"
+    depends_on:
+      - backend

@@ -1,10 +1,18 @@
-# --- 构建阶段 ---
+# frontend/Dockerfile
+
 FROM node:22-alpine as builder
 
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
+
+
+# 安装 dos2unix 并转换所有脚本
+RUN apk add --no-cache dos2unix && \
+    find . -type f -exec dos2unix {} +
+
+
 # 执行构建命令，生成静态文件到 /app/dist 目录
 RUN npm run build
 
@@ -17,8 +25,7 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # 移除Nginx的默认配置
 RUN rm /etc/nginx/conf.d/default.conf
 
-# 【优雅实现】直接在Dockerfile中创建新的Nginx配置文件
-# 这样做的好处是前端配置完全自包含，无需外部nginx.conf文件
+# 直接在Dockerfile中创建新的Nginx配置文件，这样做的好处是前端配置完全自包含，无需外部nginx.conf文件
 COPY <<EOF /etc/nginx/conf.d/default.conf
 server {
     listen 80;

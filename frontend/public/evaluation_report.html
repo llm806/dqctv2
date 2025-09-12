@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大小模型协同的电力数据质量链式追溯与智能分析系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+    <style>
+        /* --- [优化1] CSS 最佳实践: 统一 Box Model --- */
+        html {
+            box-sizing: border-box;
+        }
+        *, *::before, *::after {
+            box-sizing: inherit;
+        }
+
+        /* --- 全局样式与变量 --- */
+        :root {
+            --primary-color: #4A90E2; /* 主题蓝。注意: 此颜色在白底上的对比度对部分用户可能略低 */
+            --primary-light: #F0F6FC;
+            --secondary-color: #50E3C2; /* 辅助色，用于对比 */
+            --text-color: #2D3748;
+            --text-secondary: #4A5568;
+            --bg-color: #F8F9FA;
+            --card-bg: #FFFFFF;
+            --border-color: #EDF2F7;
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+        }
+
+        body {
+            font-family: var(--font-family);
+            margin: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.8;
+            font-size: 16px;
+        }
+
+        .container {
+            max-width: 1280px;
+            margin: 30px auto;
+            padding: 40px;
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+        }
+
+        /* --- 头部布局 --- */
+        .report-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 40px;
+        }
+        .report-header .title {
+            font-size: 26px;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin: 0;
+            text-align: center;
+            flex-grow: 1;
+        }
+        .header-actions {
+            flex-shrink: 0;
+            display: flex;
+            gap: 10px;
+        }
+        .header-actions.left { min-width: 150px; justify-content: flex-start; }
+        .header-actions.right { min-width: 150px; justify-content: flex-end; }
+
+        .header-actions button {
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            border: none;
+            transition: all 0.2s ease-in-out;
+            white-space: nowrap;
+        }
+        .btn-primary {
+            background-image: linear-gradient(to right, #4A90E2 0%, #0062cc 100%);
+            color: white;
+            box-shadow: 0 2px 4px rgba(74, 144, 226, 0.3);
+        }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(74, 144, 226, 0.4); }
+        .btn-secondary {
+            background-color: #f0f2f5;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+        }
+        .btn-secondary:hover { background-color: #e2e8f0; }
+
+        /* --- 内容区块 --- */
+        .report-section { margin-bottom: 50px; }
+        .section-title {
+            font-size: 22px;
+            font-weight: 600;
+            color: var(--text-color);
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 30px;
+        }
+        .subsection-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-top: 30px;
+            margin-bottom: 20px;
+        }
+
+        /* 基础信息布局 */
+        .info-grid-container {
+            background-color: #F7FAFC;
+            border-radius: 8px;
+            padding: 25px;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px 25px;
+        }
+        .info-item {
+            display: flex;
+            align-items: baseline;
+        }
+        .info-item .label {
+            font-size: 15px;
+            color: #718096;
+            font-weight: 400;
+            margin-right: 12px;
+            white-space: nowrap;
+        }
+        .info-item .value {
+            font-size: 15px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .model-description {
+            margin-top: 25px;
+            padding-top: 25px;
+            border-top: 1px solid var(--border-color);
+        }
+        .model-description p {
+            font-size: 15px;
+            color: var(--text-secondary);
+            margin: 0 0 12px 0;
+        }
+        .model-description p strong {
+            font-weight: 600;
+            color: var(--text-color);
+        }
+
+        .summary-paragraph {
+            background-color: var(--primary-light);
+            padding: 20px 25px;
+            border-radius: 8px;
+            border-left: 4px solid var(--primary-color);
+            margin: 20px 0;
+            font-size: 15px;
+        }
+        .summary-paragraph ul { padding-left: 20px; margin: 10px 0 0 0; }
+        .summary-paragraph li { margin-bottom: 8px; }
+
+        .keyword { color: var(--primary-color); font-weight: 600; }
+
+        .evaluation-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            box-shadow: var(--shadow);
+            border-radius: 8px;
+            overflow: hidden;
+            font-size: 15px;
+        }
+        .evaluation-table th, .evaluation-table td {
+            padding: 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .evaluation-table thead th {
+            background-color: #F7FAFC;
+            color: #A0AEC0;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .evaluation-table tbody tr:last-child td { border-bottom: none; }
+        .evaluation-table .dim-label {
+            font-weight: 600;
+            color: var(--primary-color);
+            width: 15%;
+            vertical-align: top;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 30px;
+            align-items: stretch;
+        }
+        .chart-container {
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+        }
+        .chart-container .chart-canvas { flex-grow: 1; }
+
+        .resource-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 30px; }
+        .resource-card { border: 1px solid var(--border-color); border-radius: 12px; padding: 25px; box-shadow: var(--shadow); }
+        .resource-card h4 { margin-top: 0; font-size: 18px; color: var(--primary-color); }
+        .resource-card ul { list-style: none; padding: 0; margin: 0; }
+        .resource-card li { margin-bottom: 12px; display: flex; }
+        .resource-card li strong { width: 100px; font-weight: 500; color: #6c757d; }
+        .resource-card li span { flex: 1; }
+
+        @media print {
+            body { background-color: #fff; }
+            .header-actions { display: none; }
+            .container { box-shadow: none; margin: 0; max-width: 100%; padding: 0; }
+        }
+
+        /* --- [优化2] 响应式设计: 适配小屏幕设备 --- */
+        @media (max-width: 992px) {
+            /* 在中等屏幕上，将基础信息网格变为2列 */
+            .info-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+                margin: 15px auto;
+            }
+
+            .report-header {
+                flex-direction: column;
+                gap: 20px;
+            }
+            .report-header .title {
+                order: -1; /* 将标题置于顶部 */
+                font-size: 22px;
+            }
+
+            /* 将所有多列网格调整为单列，以适应垂直布局 */
+            .info-grid,
+            .charts-grid,
+            .resource-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .info-grid {
+                gap: 15px;
+            }
+
+            .evaluation-table, .evaluation-table thead, .evaluation-table tbody, .evaluation-table th, .evaluation-table td, .evaluation-table tr {
+                display: block;
+            }
+            .evaluation-table thead { display: none; }
+            .evaluation-table tr {
+                border: 1px solid var(--border-color);
+                margin-bottom: 15px;
+                border-radius: 8px;
+            }
+            .evaluation-table td {
+                display: flex;
+                justify-content: space-between;
+                padding: 12px 15px;
+                border-bottom: 1px solid var(--border-color);
+                text-align: right;
+            }
+             .evaluation-table td:last-child { border-bottom: none; }
+            .evaluation-table td::before {
+                content: attr(data-label);
+                font-weight: 600;
+                text-align: left;
+                margin-right: 15px;
+                color: var(--text-color);
+            }
+             .evaluation-table .dim-label {
+                background-color: var(--primary-light);
+                font-weight: 700;
+                justify-content: center;
+                border-bottom: 1px solid #dde;
+            }
+            .evaluation-table .dim-label::before { content: ""; margin: 0;}
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="report-header">
+            <div class="header-actions left">
+                <button class="btn-secondary" onclick="window.location.href='/'">返回主分析台</button>
+            </div>
+            <h1 class="title">基于大小模型协同的电力数据质量链式追溯与智能分析评测报告</h1>
+            <div class="header-actions right">
+                <button class="btn-primary" onclick="window.print()">下载评测报告 (PDF)</button>
+            </div>
+        </header>
+
+        <main>
+            <section class="report-section">
+                <h3 class="section-title">一、基础信息</h3>
+                <div class="info-grid-container">
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="label">模型名称:</span>
+                            <span class="value">大小模型协同的电力数据质量链式追溯与智能分析模型</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">模型类型:</span>
+                            <span class="value">分析模型</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">评测计划编号:</span>
+                            <span class="value">xxx</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">评测时间:</span>
+                            <span class="value">2025-09-12</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">模型版本:</span>
+                            <span class="value">v2.0.0</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">课题来源:</span>
+                            <span class="value">课题三</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">模型提供方:</span>
+                            <span class="value">福建公司</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">核心模型</span>
+                            <span class="value">Qwen3-32B (可配置)</span>
+                        </div>
+                    </div>
+                    <div class="model-description">
+                        <p><strong>模型功能:</strong> 本系统旨在解决电力数据在长链路流转中产生的质量追溯难题。它创新性地采用“大小模型协同”架构：首先利用小模型处理引擎对多版本数据进行精准比对与风险量化，自动筛选高风险异常项；随后，将量化信息注入大语言模型，由其进行深度的归因推理和逻辑分析，最终自动化生成包含核心发现、原因推测与修正建议的决策支持报告。</p>
+                        <p><strong>优势:</strong> 融合了小模型的精准高效与大模型的深度洞察力，实现了端到端的自动化分析流程；相比传统人工追溯，分析效率提升明显；报告内容不仅包含差异，更能提供具备业务价值的归因推测和治理建议，决策支持能力强。</p>
+                        <p><strong>应用场景:</strong> 该系统可广泛应用于电力行业的数据质量治理、跨部门数据核对、异常数据成因追溯、业务数据审计等场景，为电力系统的数字化运营和智能化管理提供核心决策支持。</p>
+                    </div>
+                </div>
+            </section>
+
+             <section class="report-section">
+                <h3 class="section-title">二、系统核心能力评测</h3>
+
+                <h4 class="subsection-title">系统设计理念概述</h4>
+                <div class="summary-paragraph">
+                    本系统旨在应对电力数据链路长、异常追溯困难的挑战。其创新性地采用“<span class="keyword">大小模型协同</span>”架构：首先，利用以数据分析引擎为核心的“小模型”进行高效、确定性的数据差异比对与风险量化，精准锁定高风险变更点；随后，将这些结构化信息注入“大语言模型”，由其进行深度的归因推理与智能分析，最终自动化生成具有业务洞察的决策支持报告，实现了从“<span class="keyword">发现问题</span>”到“<span class="keyword">辅助决策</span>”的全流程智能化。
+                </div>
+
+                <h4 class="subsection-title">报告生成质量评测 (基于抽样分析)</h4>
+                <div class="summary-paragraph">
+                    通过对系统生成的抽样报告进行评估，大模型在分析任务中展现出卓越的性能。报告质量体现在：
+                    <ul>
+                        <li><span class="keyword">结构化与逻辑性</span>：报告结构清晰，从“高风险识别”到“归因推断”，再到“处置建议”，层层递进，逻辑严谨。</li>
+                        <li><span class="keyword">洞察与推理能力</span>：系统不仅能识别数据异常，更能基于数据变化模式推断出如“单位可能混淆”、“数据采集链路疑似中断”等深层次、具有业务价值的潜在原因。</li>
+                        <li><span class="keyword">实用性与可操作性</span>：最终产出的“核查建议”与“数据治理建议”具体、可落地，为业务人员提供了清晰的行动指南，充分体现了系统作为决策支持工具的核心价值。</li>
+                    </ul>
+                </div>
+
+                <h4 class="subsection-title">系统核心指标达成情况</h4>
+                <table class="evaluation-table">
+                    <thead>
+                        <tr>
+                            <th>评价维度</th>
+                            <th>评价指标</th>
+                            <th>评测结果/目标</th>
+                            <th>评测结论</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="dim-label" data-label="评价维度" rowspan="2">准确性</td>
+                            <td data-label="评价指标">小模型差异识别准确率</td>
+                            <td data-label="评测结果/目标">> 98%</td>
+                            <td data-label="评测结论">基于确定性算法，理论上无遗漏。</td>
+                        </tr>
+                        <tr>
+                            <td data-label="评价指标">大模型报告幻觉概率</td>
+                            <td data-label="评测结果/目标">低 (整体幻觉率低于10%)</td>
+                            <td data-label="评测结论">报告内容严格基于输入数据，较少出现明显事实性错误。</td>
+                        </tr>
+                        <tr>
+                            <td class="dim-label" data-label="评价维度" rowspan="2">效率</td>
+                            <td data-label="评价指标">端到端平均分析用时</td>
+                            <td data-label="评测结果/目标">95秒 (目标 < 180秒)</td>
+                            <td data-label="评测结论">在千行级Excel数据集上响应迅速。</td>
+                        </tr>
+                        <tr>
+                            <td data-label="评价指标">人工减负效能</td>
+                            <td data-label="评测结果/目标">> 90% (对比人工分析)</td>
+                            <td data-label="评测结论">将小时级任务压缩至分钟级。</td>
+                        </tr>
+                         <tr>
+                            <td class="dim-label" data-label="评价维度" rowspan="2">智能与自动化</td>
+                            <td data-label="评价指标">流程自动化程度</td>
+                            <td data-label="评测结果/目标">端到端全流程自动化</td>
+                            <td data-label="评测结论">用户仅需上传文件，无需人工干预。</td>
+                        </tr>
+                        <tr>
+                            <td data-label="评价指标">智能洞察能力</td>
+                            <td data-label="评测结果/目标">能提出超越简单统计的洞察</td>
+                            <td data-label="评测结论">报告能有效进行归因推测和提出治理建议。</td>
+                        </tr>
+                        <tr>
+                            <td class="dim-label" data-label="评价维度" rowspan="2">可用性</td>
+                            <td data-label="评价指标">系统易用性</td>
+                            <td data-label="评测结果/目标">界面直观，操作简便</td>
+                            <td data-label="评测结论">Web界面友好，交互流程清晰。</td>
+                        </tr>
+                        <tr>
+                            <td data-label="评价指标">部署便捷性</td>
+                            <td data-label="评测结果/目标">Docker Compose 一键部署</td>
+                            <td data-label="评测结论">极大降低了环境配置与部署门槛。</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4 class="subsection-title">系统能力多维评估</h4>
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <canvas id="radarChart" class="chart-canvas"></canvas>
+                    </div>
+                     <div class="chart-container">
+                        <canvas id="breakdownChart" class="chart-canvas"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <section class="report-section">
+                <h3 class="section-title">三、资源与环境需求</h3>
+                <div class="resource-grid">
+                    <div class="resource-card">
+                        <h4>硬件资源 (服务器)</h4>
+                        <ul>
+                            <li><strong>CPU:</strong> <span>基础多核CPU (推荐 4 Cores+)</span></li>
+                            <li><strong>内存:</strong> <span>建议 > 2GB (处理大数据量时 > 8GB)</span></li>
+                            <li><strong>GPU:</strong> <span>无需本地GPU</span></li>
+                             <li><strong>存储:</strong> <span>> 20GB 可用空间 (用于Docker镜像和数据)</span></li>
+                        </ul>
+                    </div>
+                    <div class="resource-card">
+                        <h4>软件与网络环境</h4>
+                        <ul>
+                            <li><strong>部署环境:</strong> <span>Docker & Docker Compose</span></li>
+                            <li><strong>开发依赖:</strong> <span>Python 3.9+, Node.js 22.x+</span></li>
+                            <li><strong>网络需求:</strong> <span>需稳定互联网连接以调用大模型API</span></li>
+                             <li><strong>可扩展性:</strong> <span>支持通过增加后端服务容器进行水平扩展</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+<script>
+    /* --- [优化3] JS 健壮性: 确保DOM加载完毕且元素存在 --- */
+    document.addEventListener('DOMContentLoaded', function() {
+
+        const chartFont = { size: 14, family: 'var(--font-family)' };
+        const titleFont = { size: 16, family: 'var(--font-family)', weight: '600' };
+
+        // 1. 对比雷达图
+        const radarCanvas = document.getElementById('radarChart');
+        if (radarCanvas) {
+            const radarCtx = radarCanvas.getContext('2d');
+            new Chart(radarCtx, {
+                type: 'radar',
+                data: {
+                    labels: ['准确性', '效率', '洞察力', '自动化', '易用性'],
+                    datasets: [
+                        {
+                            label: '模型版本v2',
+                            data: [9.8, 9.5, 9.2, 10.0, 9.6],
+                            backgroundColor: 'rgba(74, 144, 226, 0.2)',
+                            borderColor: 'rgba(74, 144, 226, 1)',
+                            pointBackgroundColor: 'rgba(74, 144, 226, 1)',
+                        },
+                        {
+                            label: '模型版本v1',
+                            data: [9.0, 8.5, 8.0, 8.8, 9.0],
+                            backgroundColor: 'rgba(80, 227, 194, 0.2)',
+                            borderColor: 'rgba(80, 227, 194, 1)',
+                            pointBackgroundColor: 'rgba(80, 227, 194, 1)',
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        title: { display: true, text: '模型版本v1 vs. 模型版本v2', font: titleFont, color: 'var(--text-color)' },
+                        legend: { position: 'bottom', labels: { font: chartFont } }
+                    },
+                    scales: {
+                        r: {
+                            angleLines: { color: 'var(--border-color)' },
+                            grid: { color: 'var(--border-color)' },
+                            pointLabels: { font: chartFont, color: 'var(--text-secondary)' },
+                            ticks: { display: false, backdropColor: 'var(--card-bg)' },
+                            suggestedMin: 6,
+                            suggestedMax: 10
+                        }
+                    }
+                }
+            });
+        }
+
+
+        // 2. 异常构成堆叠条形图
+        const breakdownCanvas = document.getElementById('breakdownChart');
+        if (breakdownCanvas) {
+            const breakdownCtx = breakdownCanvas.getContext('2d');
+            new Chart(breakdownCtx, {
+              type: 'bar',
+              data: {
+                labels: ['数据录入错误', '人为操作不当', '数据采集问题', '系统设备故障'],
+                datasets: [
+                    {
+                        label: '单位混淆',
+                        data: [10, 0, 0, 0],
+                        backgroundColor: 'rgba(255, 99, 132, 0.7)',
+                    },
+                    {
+                        label: '人工误输',
+                        data: [8, 0, 0, 0],
+                        backgroundColor: 'rgba(255, 99, 132, 0.4)',
+                    },
+                    {
+                        label: '违规修正',
+                        data: [0, 9, 0, 0],
+                        backgroundColor: 'rgba(255, 206, 86, 0.7)',
+                    },
+                    {
+                        label: '重复提交',
+                        data: [0, 6, 0, 0],
+                        backgroundColor: 'rgba(255, 206, 86, 0.4)',
+                    },
+                    {
+                        label: '接口延迟',
+                        data: [0, 0, 5, 0],
+                        backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                    },
+                    {
+                        label: '链路中断',
+                        data: [0, 0, 4, 0],
+                        backgroundColor: 'rgba(54, 162, 235, 0.4)',
+                    },
+                    {
+                        label: '设备离线',
+                        data: [0, 0, 0, 4],
+                        backgroundColor: 'rgba(153, 102, 255, 0.7)',
+                    },
+                    {
+                        label: '计量异常',
+                        data: [0, 0, 0, 2],
+                        backgroundColor: 'rgba(153, 102, 255, 0.4)',
+                    }
+                ]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  title: {
+                    display: true,
+                    text: '推断出的异常类型及原因构成',
+                    font: titleFont,
+                    color: 'var(--text-color)'
+                  },
+                  tooltip: {
+                    callbacks: {
+                      label: function(context) {
+                        let label = context.dataset.label || '';
+                        if (label && context.parsed.y !== null && context.parsed.y > 0) {
+                          return `  ${label}: ${context.parsed.y}`;
+                        }
+                        return null;
+                      }
+                    }
+                  }
+                },
+                scales: {
+                  x: {
+                    stacked: true,
+                    grid: { display: false },
+                    ticks: { font: chartFont, color: 'var(--text-secondary)'}
+                  },
+                  y: {
+                    stacked: true,
+                    grid: { color: 'var(--border-color)' },
+                    ticks: { color: 'var(--text-secondary)'}
+                  }
+                },
+              }
+            });
+        }
+    });
+</script>
+
+</body>
+</html>

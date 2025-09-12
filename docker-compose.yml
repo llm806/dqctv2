@@ -1,5 +1,4 @@
-version: '3.8'
-
+# docker-compose.yml
 services:
   # 后端服务定义
   backend:

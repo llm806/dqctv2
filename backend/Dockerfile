@@ -1,4 +1,5 @@
-# 基础镜像为 python 3.11
+# backend/Dockerfile
+
 FROM python:3.11-slim
 
 # 安装 weasyprint 所需的系统依赖库

@@ -5,6 +5,10 @@
         <DataAnalysis class="icon"/>
         <h1>基于大小模型协同的电力数据智能分析</h1>
       </div>
+
+      <div class="header-extra-actions">
+        <el-button type="primary" plain @click="goToReportPage">系统评测报告（模型卡片）</el-button>
+      </div>
     </el-header>
 
     <el-main ref="mainRef" class="main-content">
@@ -33,7 +37,7 @@
               </el-icon>
               <div class="el-upload__text">将文件拖到此处, 或 <em>点击上传</em></div>
               <template #tip>
-                <div class="el-upload__tip">请上传至少2个 .xlsx 文件进行对比分析</div>
+                <div class="el-upload__tip">请按版本顺序上传至少2个 .xlsx 文件进行对比分析</div>
               </template>
             </el-upload>
 
@@ -176,6 +180,12 @@ watch(reportMarkdown, async () => {
   await nextTick();
   reportScrollbar.value?.update();
 });
+
+// START: 新增的跳转方法
+const goToReportPage = () => {
+  // 使用 window.open 在新标签页中打开报告，不影响当前分析任务
+  window.open('/evaluation_report.html', '_blank');
+};
 </script>
 
 <style scoped>
@@ -188,6 +198,7 @@ watch(reportMarkdown, async () => {
 .header {
   background-color: #ffffff;
   display: flex;
+  justify-content: space-between;
   align-items: center;
   box-shadow: 0 2px 8px #f0f1f2;
   z-index: 1;

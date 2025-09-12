@@ -1,0 +1,13 @@
+# 忽略 Python 虚拟环境
+.venv
+venv
+
+# 忽略 Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 忽略其他开发工具配置
+.idea/
+.vscode/
