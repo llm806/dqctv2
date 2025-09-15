@@ -5,7 +5,6 @@
         <DataAnalysis class="icon"/>
         <h1>基于大小模型协同的电力数据智能分析</h1>
       </div>
-
       <div class="header-extra-actions">
         <el-button type="primary" plain @click="goToReportPage">系统评测报告（模型卡片）</el-button>
       </div>
@@ -41,11 +40,49 @@
               </template>
             </el-upload>
 
+            <el-form
+                v-if="availableColumns.length > 0"
+                class="param-form"
+                label-position="top"
+                :model="analysisParams"
+            >
+              <el-form-item label="关键列 (用于唯一识别记录)">
+                <el-select
+                    v-model="analysisParams.keyColumns"
+                    multiple
+                    filterable
+                    placeholder="请从文件中选择关键列"
+                    style="width: 100%;"
+                >
+                  <el-option
+                      v-for="col in availableColumns"
+                      :key="col"
+                      :label="col"
+                      :value="col"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="分析值列 (需要追踪变化的数值)">
+                <el-select
+                    v-model="analysisParams.valueColumn"
+                    filterable
+                    placeholder="请选择要分析的数值列"
+                    style="width: 100%;"
+                >
+                  <el-option
+                      v-for="col in availableColumns"
+                      :key="col"
+                      :label="col"
+                      :value="col"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-form>
             <el-button
                 type="primary"
                 size="large"
                 @click="startAnalysis"
-                :disabled="filesToUpload.length < 2 || isLoading"
+                :disabled="isStartButtonDisabled"
                 :loading="isLoading"
                 style="width: 100%; margin-top: 20px;"
             >
@@ -92,7 +129,10 @@ import type { UploadInstance, UploadProps, UploadRawFile, UploadUserFile } from 
 import { ElMessage } from 'element-plus';
 import { DataAnalysis, UploadFilled, Document, Download } from '@element-plus/icons-vue';
 import { marked } from 'marked';
+// 优化: 将ApiService的调用参数更新为我们新设计的格式
 import { analyzeFiles, downloadPdf } from './services/ApiService';
+// 优化: 引入xlsx库来读取Excel表头。请确保已安装: npm install xlsx
+import * as XLSX from 'xlsx';
 
 // refs for components
 const uploadRef = ref<UploadInstance | null>(null);
@@ -106,6 +146,24 @@ const fileListForDisplay = ref<UploadUserFile[]>([]);
 const isLoading = ref(false);
 const reportMarkdown = ref('');
 
+// START: 新增的动态参数状态
+const availableColumns = ref<string[]>([]);
+const analysisParams = ref({
+  keyColumns: [] as string[],
+  valueColumn: '',
+});
+// END: 新增的动态参数状态
+
+// 优化: “开始分析”按钮的禁用逻辑更完善
+const isStartButtonDisabled = computed(() => {
+  return (
+      filesToUpload.value.length < 2 ||
+      isLoading.value ||
+      analysisParams.value.keyColumns.length === 0 ||
+      !analysisParams.value.valueColumn
+  );
+});
+
 // 将 Markdown 转换为 HTML
 const reportHtml = computed(() => {
   if (reportMarkdown.value) {
@@ -115,22 +173,55 @@ const reportHtml = computed(() => {
   return '';
 });
 
-// 文件处理回调
-const handleFileChange: UploadProps['onChange'] = (_uploadFile, uploadFiles) => {
+// 优化: 文件处理回调，增加读取表头逻辑
+const handleFileChange: UploadProps['onChange'] = async (_uploadFile, uploadFiles) => {
   filesToUpload.value = uploadFiles.map(f => f.raw as UploadRawFile);
   fileListForDisplay.value = uploadFiles;
+
+  // 清空旧状态
+  availableColumns.value = [];
+  analysisParams.value.keyColumns = [];
+  analysisParams.value.valueColumn = '';
+
+  if (filesToUpload.value.length > 0) {
+    const firstFile = filesToUpload.value[0];
+    try {
+      const data = await firstFile.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const headers = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] as string[];
+      availableColumns.value = headers.filter(h => h); // 过滤掉空表头
+    } catch (error) {
+      ElMessage.error('解析Excel文件表头失败，请检查文件格式是否正确。');
+      console.error(error);
+    }
+  }
 };
 
+// 优化: 文件移除回调，增加清空状态逻辑
 const handleFileRemove: UploadProps['onRemove'] = (uploadFile, uploadFiles) => {
   filesToUpload.value = uploadFiles.map(f => f.raw as UploadRawFile);
   fileListForDisplay.value = uploadFiles;
   ElMessage.info(`文件 "${uploadFile.name}" 已被移除。`);
+
+  // 如果所有文件都被移除，则清空列选项和已选参数
+  if (filesToUpload.value.length === 0) {
+    availableColumns.value = [];
+    analysisParams.value.keyColumns = [];
+    analysisParams.value.valueColumn = '';
+  }
 };
 
-// 开始分析
+// 优化: 开始分析函数，传递动态参数
 const startAnalysis = async () => {
+  // 此处检查已通过 isStartButtonDisabled 计算属性覆盖，但为保险起见保留
   if (filesToUpload.value.length < 2) {
     ElMessage.warning('请确保已上传至少两个文件。');
+    return;
+  }
+  if (analysisParams.value.keyColumns.length === 0 || !analysisParams.value.valueColumn) {
+    ElMessage.warning('请选择关键列和分析值列。');
     return;
   }
 
@@ -138,7 +229,8 @@ const startAnalysis = async () => {
   reportMarkdown.value = '';
 
   try {
-    const result = await analyzeFiles(filesToUpload.value);
+    // 将动态参数和文件列表一同传递给API服务
+    const result = await analyzeFiles(filesToUpload.value, analysisParams.value);
     if (result.success) {
       reportMarkdown.value = result.report;
       ElMessage.success('分析完成！');
@@ -154,7 +246,7 @@ const startAnalysis = async () => {
   }
 };
 
-// 下载功能
+// 下载功能 (保持不变)
 const downloadMD = () => {
   const blob = new Blob([reportMarkdown.value], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -175,15 +267,14 @@ const downloadPDF = async () => {
   }
 };
 
-// 当报告内容更新时，通知滚动条组件更新其内部状态，以确保滚动条正确
+// 监听报告内容更新 (保持不变)
 watch(reportMarkdown, async () => {
   await nextTick();
   reportScrollbar.value?.update();
 });
 
-// START: 新增的跳转方法
+// 保留您新增的跳转方法 (保持不变)
 const goToReportPage = () => {
-  // 使用 window.open 在新标签页中打开报告，不影响当前分析任务
   window.open('/evaluation_report.html', '_blank');
 };
 </script>
@@ -221,14 +312,12 @@ const goToReportPage = () => {
   vertical-align: middle;
 }
 
-/* main，减去 header 高度 */
 .main-content {
   padding: 20px;
   height: calc(100% - 64px);
   box-sizing: border-box;
 }
 
-/* card 充满列高度，并设置为 flex 容器 */
 .box-card {
   height: 100%;
   display: flex;
@@ -241,6 +330,13 @@ const goToReportPage = () => {
   flex-grow: 1;
 }
 
+/* 新增: 为参数表单添加一些间距 */
+.param-form {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
+}
+
 .report-card {
   height: 100%;
   display: flex;
@@ -248,7 +344,6 @@ const goToReportPage = () => {
 }
 
 .report-scroll {
-  /* 此样式确保滚动条本身可以收缩，但现在已不再严格需要，因为高度是 100% */
   flex: 1;
   min-height: 0;
 }
@@ -265,7 +360,6 @@ const goToReportPage = () => {
   align-items: center;
 }
 
-/* Markdown specific styles */
 .markdown-body {
   font-family: -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
 }

@@ -4,38 +4,39 @@
 
 # 分析模式: 'FILES' 或 'SHEETS'
 # 'FILES': 对比 'data_sources.files' 列表中的多个独立文件
-# 'SHEETS': 对比 'data_sources.sheets_config' 中指定的单个文件内的多个工作表
-active_mode: 'FILES'
-
-# --- 数据源配置 ---
-data_sources:
-  files:
-    - './data/历史数据v1.xlsx'
-    - './data/最新数据v2.xlsx'
-    - './data/最新数据v3.xlsx'
+## 'SHEETS': 对比 'data_sources.sheets_config' 中指定的单个文件内的多个工作表
+#active_mode: 'FILES'
+#
+## --- 数据源配置 ---
+#data_sources:
+#  files:
+#    - './data/历史数据v1.xlsx'
+#    - './data/最新数据v2.xlsx'
+#    - './data/最新数据v3.xlsx'
 
 #  sheets_config:
 #    file_path: './data/综合数据.xlsx'
 #    sheet_names: ['版本1', '版本2', '版本3']
 
 # --- 核心分析参数 ---
-analysis_params:
-  # 用于唯一标识一条记录的列名组合
-  key_columns: ['时间', '省份', '行业编码']
-
-  # 在历史追溯模式下，需要追踪其数值变化的列
-  value_column: '电量'
-
-  # 在历史追溯模式下，仅向LLM提供Top-N条最异常的数据进行分析
-  # 设置为 0 或 null 则分析所有变更记录
-  top_n_for_analysis: 15
-
-  # 数据预处理格式化规则
-  # type: 'zfill' -> 前置补零
-  formatting_rules:
-    行业编码:
-      type: 'zfill'
-      width: 4
+#analysis_params:
+#  # 用于唯一标识一条记录的列名组合
+#  key_columns: ['数据日期','省份编码','行业编码']
+##  key_columns: ['数据日期', '省份', '行业编码']
+#
+#  # 在历史追溯模式下，需要追踪其数值变化的列
+#  value_column: '电量'
+#
+#  # 在历史追溯模式下，仅向LLM提供Top-N条最异常的数据进行分析
+#  # 设置为 0 或 null 则分析所有变更记录
+#  top_n_for_analysis: 15
+#
+#  # 数据预处理格式化规则
+#  # type: 'zfill' -> 前置补零
+#  formatting_rules:
+#    行业编码:
+#      type: 'zfill'
+#      width: 4
 
 # --- LLM 模型配置 ---
 llm:

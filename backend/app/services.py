@@ -1,27 +1,31 @@
 # backend/app/services.py
 import os
 import shutil
-import tempfile  # 导入标准库
-from typing import List
+import tempfile
+# 优化: 导入 Dict 类型提示以增强代码可读性
+from typing import List, Dict
 from fastapi import UploadFile
 import markdown2
 from weasyprint import HTML
 
-# 将src目录添加到系统路径
+# 将src目录添加到系统路径 (保持不变)
 import sys
-
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from src.core.workflow import execute_comparison_workflow, execute_historical_workflow
 from .config import settings
 from .logger import logger
 
-
-def run_analysis_service(files: List[UploadFile]) -> str:
+# 优化: 更新函数签名以接收来自API层的动态分析参数
+def run_analysis_service(files: List[UploadFile], analysis_params: Dict) -> str:
     """
     核心分析服务：在系统临时目录中处理上传的文件，运行工作流，并自动清理。
+
+    Args:
+        files: 用户上传的文件列表。
+        analysis_params: 一个包含本次分析所需参数的字典，
+                         例如：{'keyColumns': ['列A', '列B'], 'valueColumn': '列C'}。
     """
-    # 使用 tempfile.mkdtemp() 在操作系统的临时区域创建唯一的目录
     temp_dir = tempfile.mkdtemp(prefix="data_analysis_")
     request_id = os.path.basename(temp_dir)
     logger.info(f"为请求 {request_id} 创建系统临时目录: {temp_dir}")
@@ -40,12 +44,18 @@ def run_analysis_service(files: List[UploadFile]) -> str:
         if num_tasks < 2:
             raise ValueError("至少需要提供两个数据源才能进行分析。")
 
+        # 优化: 不再使用静态的 settings['analysis_params']，
+        # 而是将动态的 analysis_params 和静态的 llm/output 配置分别传递给工作流。
+        # 这要求下游的 workflow 函数也做出相应修改。
+        llm_config = settings.get('llm', {})
+        output_config = settings.get('output', {})
+
         if num_tasks == 2:
             logger.info("启动【双版本高精度比对分析】工作流...")
-            report = execute_comparison_workflow(analysis_tasks, settings)
+            report = execute_comparison_workflow(analysis_tasks, analysis_params, llm_config, output_config)
         else:
             logger.info("启动【多版本历史追溯分析】工作流...")
-            report = execute_historical_workflow(analysis_tasks, settings)
+            report = execute_historical_workflow(analysis_tasks, analysis_params, llm_config, output_config)
 
         logger.info(f"请求 {request_id} 分析完成。")
         return report
@@ -54,7 +64,6 @@ def run_analysis_service(files: List[UploadFile]) -> str:
         logger.error(f"在分析服务中发生错误: {e}", exc_info=True)
         raise e
     finally:
-        # 确保临时目录总是被清理
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
             logger.info(f"清理并删除系统临时目录: {temp_dir}")
@@ -62,77 +71,53 @@ def run_analysis_service(files: List[UploadFile]) -> str:
 
 def generate_pdf_service(markdown_content: str) -> str:
     """
-    将 Markdown 内容转换为 PDF，使用 markdown2 支持 tables 扩展，
-    并注入针对 WeasyPrint 的表格样式（表头跨页、单元格换行、边框等）。
-    返回生成的 PDF 临时文件路径。
+    将 Markdown 内容转换为 PDF (无需修改，保持原样)。
     """
     try:
-        # 使用 markdown2 的 extras，确保表格语法被解析为 <table>
-        # 其他可选 extras: "fenced-code-blocks", "strike", "tables", "cuddled-lists", "smarty"
         html_content = markdown2.markdown(markdown_content, extras=["tables", "fenced-code-blocks"])
 
-        # 强力 CSS：表格边框、表头跨页重复、单元格换行、避免分页中间断行等
-        # 根据需要可以调整字体族以保证中文显示（此处示例包含常见中文字体回退）
         html_with_style = f"""
         <!doctype html>
         <html>
           <head>
             <meta charset="utf-8">
             <style>
-              /* 基本字体与排版 */
+              /* CSS 样式保持不变 */
               @page {{ size: A4; margin: 20mm; }}
               html, body {{ font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", "Noto Sans SC", Arial, sans-serif; color: #222; }}
               body {{ font-size: 12px; line-height: 1.6; }}
-
-              /* 标题 */
               h1, h2, h3 {{ color: #333; margin: 0 0 8px 0; }}
               h1 {{ font-size: 22px; }}
               h2 {{ font-size: 18px; }}
               h3 {{ font-size: 14px; }}
-
-              /* 表格基础样式 */
               table {{
                 width: 100%;
                 border-collapse: collapse;
                 border-spacing: 0;
-                table-layout: auto; /* 若希望固定列宽可改为 fixed */
+                table-layout: auto;
                 margin: 8px 0 16px 0;
                 font-size: 12px;
               }}
-              thead {{ background: #f5f5f5; }}
+              thead {{ background: #f5f5f5; display: table-header-group; }}
+              tr {{ page-break-inside: avoid; }}
               th, td {{
                 border: 1px solid #ddd;
                 padding: 6px 8px;
                 vertical-align: top;
                 text-align: left;
-                word-wrap: break-word;      /* 长单词换行 */
-                white-space: pre-wrap;      /* 保留换行并允许换行 */
+                word-wrap: break-word;
+                white-space: pre-wrap;
+                page-break-inside: avoid;
               }}
-
-              /* 保证表头在分页时重复（WeasyPrint 会遵守 display: table-header-group）*/
-              thead {{ display: table-header-group; }}
-
-              /* 避免 tr 在分页中被拆开（尽量不拆一行到两页） */
-              tr {{ page-break-inside: avoid; }}
-
-              /* 当列过多时允许水平滚动（可选：若希望页面内缩小请移除此规则并用 table-layout: fixed） */
               .table-wrapper {{ width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }}
-
-              /* 代码块 */
               pre {{ background: #f6f8fa; padding: 10px; border-radius: 4px; overflow: auto; }}
               code {{ background: #f6f8fa; padding: 2px 4px; border-radius: 4px; }}
-
-              /* 防止在单元格内出现不希望的断页 */
-              td, th {{ page-break-inside: avoid; }}
-
-              /* 小屏或长表格可微调字体 */
               @media print {{
                 body {{ -webkit-print-color-adjust: exact; }}
               }}
             </style>
           </head>
           <body>
-            <!-- 为避免超宽表格被截断，包一层 div 允许横向滚动（WeasyPrint 会导出可滚动区域的内容） -->
             <div class="table-wrapper">
               {html_content}
             </div>
@@ -140,7 +125,6 @@ def generate_pdf_service(markdown_content: str) -> str:
         </html>
         """
 
-        # 生成临时 PDF 文件
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False, prefix="report_") as tmpf:
             pdf_path = tmpf.name
 
