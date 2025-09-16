@@ -10,6 +10,7 @@ services:
     volumes:
       - ./config.yaml:/config.yaml
       - ./.env:/app/.env
+      - ./data:/app/data
     # 环境变量，让Python日志直接输出
     environment:
       - PYTHONUNBUFFERED=1

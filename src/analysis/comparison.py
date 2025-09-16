@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import pandas as pd
-from typing import List, Optional
+from typing import List, Optional, Dict
+import numpy as np
 
 def _are_series_equal(s1: pd.Series, s2: pd.Series) -> pd.Series:
     s1_numeric = pd.to_numeric(s1, errors='coerce')
@@ -76,3 +77,88 @@ def generate_precise_diff_report(
     details = "\n".join(sorted(log_entries))
 
     return f"  {summary}\n\n--- 详细变更记录 ---\n{details}" if details else summary
+
+
+def analyze_two_versions(
+    df_hist: pd.DataFrame,
+    df_latest: pd.DataFrame,
+    key_columns: List[str],
+    value_column: str
+) -> Dict[str, pd.DataFrame]:
+    """
+    对两个版本的DataFrame进行结构化分析。
+
+    - 识别新增和删除的行。
+    - 对已修改的行，计算指定 value_column 的“异常得分”（即变化率），并按分值降序排序。
+
+    Args:
+        df_hist: 历史版本DataFrame。
+        df_latest: 最新版本DataFrame。
+        key_columns: 唯一标识行的关键列。
+        value_column: 用于计算异常分数的数值列。
+
+    Returns:
+        一个字典，包含三个DataFrame: 'added', 'deleted', 'modified'。
+        'modified' DataFrame会额外包含变化前后的值以及计算出的异常得分。
+    """
+    # --- 1. 数据准备和合并 ---
+    hist = df_hist.copy()
+    latest = df_latest.copy()
+
+    # 将用于分析的数值列转换为数字，无效值设为NaN
+    hist[value_column] = pd.to_numeric(hist[value_column], errors='coerce')
+    latest[value_column] = pd.to_numeric(latest[value_column], errors='coerce')
+
+    merged_df = pd.merge(
+        hist, latest, on=key_columns, how='outer', suffixes=('_hist', '_latest'), indicator=True
+    )
+
+    # --- 2. 识别新增和删除的记录 ---
+    deleted_rows = merged_df[merged_df['_merge'] == 'left_only'][key_columns + [f'{value_column}_hist']]
+    added_rows = merged_df[merged_df['_merge'] == 'right_only'][key_columns + [f'{value_column}_latest']]
+
+    deleted_rows.rename(columns={f'{value_column}_hist': value_column}, inplace=True)
+    added_rows.rename(columns={f'{value_column}_latest': value_column}, inplace=True)
+
+    # --- 3. 识别修改的记录并计算异常分数 ---
+    both_df = merged_df[merged_df['_merge'] == 'both'].copy()
+
+    val_hist = both_df[f'{value_column}_hist']
+    val_latest = both_df[f'{value_column}_latest']
+
+    # 仅保留数值实际发生变化的行
+    modified_rows = both_df[val_hist.ne(val_latest) & val_hist.notna() & val_latest.notna()].copy()
+
+    if not modified_rows.empty:
+        old_val = modified_rows[f'{value_column}_hist']
+        new_val = modified_rows[f'{value_column}_latest']
+
+        # 计算差异和变化率（异常得分）
+        diff = new_val - old_val
+
+        # diff取绝对值，避免负数影响排序
+        diff = diff.abs()
+
+        # 使用 np.divide 来处理除以0的情况，结果为无穷大
+        anomaly_score = np.divide(diff, old_val, where=old_val!=0, out=np.full_like(diff, np.inf)) * 100
+
+        modified_rows['变更前的值'] = old_val
+        modified_rows['变更后的值'] = new_val
+        modified_rows['差值'] = diff
+        modified_rows['异常得分'] = anomaly_score
+
+        # 按异常得分的绝对值降序排序
+        modified_rows = modified_rows.sort_values(by='异常得分', ascending=False, key=abs).reset_index(drop=True)
+
+        # 只保留有用的列
+        final_cols = key_columns + ['变更前的值', '变更后的值', '差值', '异常得分']
+        modified_rows = modified_rows[final_cols]
+    else:
+        # 如果没有修改，创建一个空的DataFrame以保持结构一致
+        modified_rows = pd.DataFrame(columns=key_columns + ['变更前的值', '变更后的值', '差值', '异常得分'])
+
+    return {
+        'added': added_rows.reset_index(drop=True),
+        'deleted': deleted_rows.reset_index(drop=True),
+        'modified': modified_rows,
+    }

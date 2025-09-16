@@ -1,17 +1,17 @@
 # backend/app/api.py
 import os
-import json # 新增: 导入json库用于解析参数
-from typing import List
-# 新增: 从fastapi导入Form，用于接收表单字段
+import json
+# MODIFIED: Import Dict along with List
+from typing import List, Dict
 from fastapi import APIRouter, UploadFile, HTTPException, BackgroundTasks, Form
 from fastapi.responses import FileResponse
 
-from .services import run_analysis_service, generate_pdf_service
+# Import the new demo service function
+from .services import run_analysis_service, generate_pdf_service, run_demo_analysis_service
 from .logger import logger
 
 router = APIRouter()
 
-# cleanup_file 函数无需修改，保持原样
 def cleanup_file(path: str):
     """后台任务，用于删除临时文件。"""
     try:
@@ -20,37 +20,43 @@ def cleanup_file(path: str):
     except OSError as e:
         logger.error(f"清理文件 {path} 失败: {e}")
 
-# 优化: 更新 /analyze 端点以接收动态参数
 @router.post("/analyze")
 async def analyze_files_endpoint(
-    # FastAPI可以智能处理 multipart/form-data 请求
-    # files 字段会被识别为文件上传
     files: List[UploadFile],
-    # 新增: 使用 Form() 来声明这是一个表单字段
-    # 前端发送的 'params' JSON字符串将被这个变量接收
     params: str = Form(...)
 ):
     if not files or len(files) < 2:
         raise HTTPException(status_code=400, detail="请至少上传两个文件。")
 
     try:
-        # 新增: 将接收到的JSON字符串解析为Python字典
         analysis_params = json.loads(params)
-
-        # 优化: 将解析后的参数字典传递给核心服务函数
-        # (请确保 run_analysis_service 函数也已更新以接收此参数)
         report = run_analysis_service(files, analysis_params)
-
         return {"success": True, "report": report}
     except json.JSONDecodeError:
-        # 新增: 健壮性处理，如果前端发送的不是合法的JSON字符串
         raise HTTPException(status_code=400, detail="提供的分析参数格式错误。")
     except Exception as e:
         logger.error(f"分析端点发生未捕获的异常: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
 
+@router.post("/analyze-demo")
+async def analyze_demo_endpoint(analysis_params: Dict):
+    """
+    处理来自前端的示例分析请求。
+    请求体中只包含分析参数，文件路径在服务器端硬编码。
+    """
+    try:
+        if not analysis_params:
+            raise HTTPException(status_code=400, detail="未提供分析参数。")
 
-# /download/pdf 端点无需修改，保持原样
+        report = run_demo_analysis_service(analysis_params)
+        return {"success": True, "report": report}
+    except FileNotFoundError as e:
+        logger.error(f"示例文件未找到: {e}", exc_info=True)
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"示例分析端点发生未捕获的异常: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
+
 @router.post("/download/pdf")
 async def download_pdf_endpoint(data: dict, background_tasks: BackgroundTasks):
     markdown_content = data.get('markdown')

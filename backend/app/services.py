@@ -11,12 +11,11 @@ from weasyprint import HTML
 # 将src目录添加到系统路径 (保持不变)
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
-
 from src.core.workflow import execute_comparison_workflow, execute_historical_workflow
 from .config import settings
 from .logger import logger
 
-# 优化: 更新函数签名以接收来自API层的动态分析参数
+# 更新函数以接收来自API层的动态分析参数
 def run_analysis_service(files: List[UploadFile], analysis_params: Dict) -> str:
     """
     核心分析服务：在系统临时目录中处理上传的文件，运行工作流，并自动清理。
@@ -70,9 +69,6 @@ def run_analysis_service(files: List[UploadFile], analysis_params: Dict) -> str:
 
 
 def generate_pdf_service(markdown_content: str) -> str:
-    """
-    将 Markdown 内容转换为 PDF (无需修改，保持原样)。
-    """
     try:
         html_content = markdown2.markdown(markdown_content, extras=["tables", "fenced-code-blocks"])
 
@@ -135,3 +131,46 @@ def generate_pdf_service(markdown_content: str) -> str:
     except Exception as e:
         logger.exception("PDF 生成失败")
         raise
+
+# 示例分析服务函数
+def run_demo_analysis_service(analysis_params: Dict) -> str:
+    """
+    核心示例分析服务：直接读取服务器本地的示例文件，运行工作流。
+    """
+    try:
+        # START: 使用新的、更简单的路径定位方法
+        project_root = ''
+        # 判断是否在Docker容器中 (一个常用的技巧是检查根目录下是否存在 .dockerenv 文件)
+        if os.path.exists('/.dockerenv'):
+            # 如果在Docker中，项目根目录就是/app
+            project_root = '/app'
+        else:
+            # 如果在本地运行，则通过相对路径向上回溯两层找到项目根目录
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+        data_folder = os.path.join(project_root, 'data')
+        # END: 新的路径定位方法
+
+        demo_files = [
+            os.path.join(data_folder, '湖北-电量数据v1.xlsx'),
+            os.path.join(data_folder, '湖北-电量数据v2.xlsx'),
+            os.path.join(data_folder, '湖北-电量数据v3.xlsx')
+        ]
+
+        for f_path in demo_files:
+            if not os.path.exists(f_path):
+                logger.error(f"示例文件未找到: {f_path}")
+                raise FileNotFoundError(f"配置的示例文件未在服务器上找到: {os.path.basename(f_path)}")
+
+        analysis_tasks = [{'file': file_path} for file_path in demo_files]
+        logger.info(f"已加载 {len(analysis_tasks)} 个本地示例文件进行分析。")
+
+        llm_config = settings.get('llm', {})
+        output_config = settings.get('output', {})
+        report = execute_historical_workflow(analysis_tasks, analysis_params, llm_config, output_config)
+
+        logger.info("示例分析完成。")
+        return report
+    except Exception as e:
+        logger.error(f"在示例分析服务中发生错误: {e}", exc_info=True)
+        raise e

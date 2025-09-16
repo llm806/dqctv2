@@ -36,8 +36,24 @@ export const analyzeFiles = async (
   return response.data;
 };
 
+// START: 新增的示例分析API函数
 /**
- * 下载 PDF 服务 (无需修改，保持原样)
+ * 示例分析服务
+ * @param params 包含关键列和分析值列的对象
+ * @returns Promise，包含分析成功与否及报告内容
+ */
+export const analyzeDemo = async (
+  params: { keyColumns: string[]; valueColumn: string }
+) => {
+  // 注意：这里不再使用 FormData，因为我们不上传文件
+  // axios 会自动将 params 对象序列化为 JSON 并发送
+  const response = await apiClient.post('analyze-demo', params);
+  return response.data;
+};
+
+
+/**
+ * 下载 PDF 报告服务
  * @param markdown 报告的 Markdown 文本
  */
 export const downloadPdf = async (markdown: string) => {
