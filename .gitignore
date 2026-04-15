@@ -3,15 +3,19 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+data/
 env/
 *.env
 .env.*
 !/.env.example
 
+
+
 # Logs and generated files
 logs/
 *.md
 *.pdf
+*.xlsx
 *.log
 *.tar
 *.zip

@@ -63,9 +63,12 @@ def execute_comparison_workflow(
     llm_config: Dict,
     output_config: Dict
 ):
+    """
+    执行双版本对比分析工作流。
+    该函数是一个生成器，会流式返回大模型的分析结果，并在结束后保存完整报告。
+    """
     try:
         key_columns = analysis_params['keyColumns']
-        # NEW: 获取 value_column 用于计算异常分
         value_column = analysis_params['valueColumn']
         log_dir = output_config.get('log_directory', './logs')
 
@@ -78,39 +81,46 @@ def execute_comparison_workflow(
         df_latest = read_and_validate_excel(latest_task['file'], key_columns + [value_column], latest_task.get('sheet'))
 
         print("  - 正在进行结构化差异分析...")
-        # MODIFIED: 调用新的、更强大的分析函数
         analysis_result = analyze_two_versions(df_hist, df_latest, key_columns, value_column)
-
-        # MODIFIED: 将结构化结果格式化为给LLM的报告
         diff_report_for_llm = format_comparison_results_for_llm(analysis_result, value_column)
+
+
 
         if not diff_report_for_llm:
             print("✅ 文件内容在关键指标上完全一致，无需调用大模型。")
-            return f"## ✅ 分析完成：文件内容一致\n\n经过高精度比对，系统确认您上传的两个文件 **{hist_name}** 和 **{latest_name}** 在指定的关键列和数值列上内容完全一致。"
+            yield f"## ✅ 分析完成：文件内容一致\n\n经过高精度比对，系统确认您上传的两个文件 **{hist_name}** 和 **{latest_name}** 在指定的关键列和数值列上内容完全一致。"
+            return
 
         prompt = create_comparison_prompt(diff_report_for_llm, hist_name, latest_name)
-
         print("\n📝 正在生成对比分析Prompt...")
         save_text_file(f'{log_dir}/prompts', 'precise_comparison_prompt', prompt)
 
-        print("🤖 正在请求大模型进行分析...")
+        print("🤖 正在请求大模型进行流式分析...")
         llm_client = get_llm_client()
-        assistant_response = request_llm_analysis(
+
+        full_response_parts = []
+        response_generator = request_llm_analysis(
             client=llm_client,
             model=llm_config.get('model_name', 'qwen-long'),
             system_prompt=llm_config.get('system_prompts', {}).get('comparison', 'You are a helpful data analyst.'),
             user_prompt=prompt
         )
+
+        for chunk in response_generator:
+            full_response_parts.append(chunk)
+            yield chunk
+
+        assistant_response = "".join(full_response_parts)
         save_text_file(f'{log_dir}/results', 'precise_comparison_result', assistant_response)
 
         report_dir = output_config.get('report_directory', '.')
         print(f"\n✅ **最终综合分析报告** 已保存到指定目录：{report_dir}")
         save_markdown_report(report_dir, 'Precise_Comparison_Report', assistant_response)
-        return assistant_response
 
     except Exception as e:
         print(f"❌ 在执行对比分析工作流时发生严重错误: {e}")
         traceback.print_exc()
+        yield f"\n\n后台错误：{str(e)}"
         raise e
 
 def execute_historical_workflow(
@@ -119,14 +129,16 @@ def execute_historical_workflow(
     llm_config: Dict,
     output_config: Dict
 ):
+    """
+    执行多版本历史追溯分析工作流。
+    该函数是一个生成器，会流式返回大模型的分析结果，并在结束后保存完整报告。
+    """
     try:
-        # --- 1. 从传入的参数中提取配置 ---
         key_columns = analysis_params['keyColumns']
         value_column = analysis_params['valueColumn']
         top_n = analysis_params.get('topN', 15)
         log_dir = output_config.get('log_directory', './logs')
 
-        # --- 2. 数据加载 ---
         all_dfs = []
         for i, task in enumerate(analysis_tasks):
             source_name = get_source_name(task)
@@ -134,16 +146,18 @@ def execute_historical_workflow(
             df_formatted = read_and_validate_excel(task['file'], key_columns + [value_column], task.get('sheet'))
             all_dfs.append(df_formatted)
 
-        # --- 3. 核心分析 ---
         trace_df = historical.generate_historical_trace_table(all_dfs, key_columns, value_column, top_n)
+
+        print(trace_df)
+
         md_trace_table = historical.create_historical_trace_markdown(trace_df, key_columns)
 
-        # --- 4. 稳健性检查：检查是否存在实质性差异 ---
+
         if "未发现任何记录的核心数值发生过变化" in md_trace_table:
              print("✅ 多版本文件核心数值一致，未发现差异，无需调用大模型。")
-             return f"## ✅ 分析完成：核心数值无变化\n\n经过多版本历史追溯，系统确认在所有文件中，您指定的数值列 **{value_column}** 未发生任何变化。"
+             yield f"## ✅ 分析完成：核心数值无变化\n\n经过多版本历史追溯，系统确认在所有文件中，您指定的数值列 **{value_column}** 未发生任何变化。"
+             return
 
-        # --- 5. LLM 交互 ---
         df_first = all_dfs[0]
         df_last = all_dfs[-1]
         summary_diff_report = comparison.generate_precise_diff_report(df_first, df_last, key_columns, columns_to_check=[value_column])
@@ -156,23 +170,30 @@ def execute_historical_workflow(
         print("\n📝 正在生成历史追溯Prompt...")
         save_text_file(f'{log_dir}/prompts', 'historical_trace_prompt', prompt)
 
-        print("🤖 正在请求大模型进行分析...")
+        print("🤖 正在请求大模型进行流式分析...")
         llm_client = get_llm_client()
-        assistant_response = request_llm_analysis(
+
+        full_response_parts = []
+        response_generator = request_llm_analysis(
             client=llm_client,
             model=llm_config.get('model_name', 'qwen-long'),
             system_prompt=llm_config.get('system_prompts', {}).get('historical', 'You are a helpful data analyst.'),
             user_prompt=prompt
         )
+
+        for chunk in response_generator:
+            full_response_parts.append(chunk)
+            yield chunk
+
+        assistant_response = "".join(full_response_parts)
         save_text_file(f'{log_dir}/results', 'historical_trace_result', assistant_response)
 
-        # --- 6. 结果保存 ---
         report_dir = output_config.get('report_directory', '.')
         print(f"\n✅ **最终综合分析报告**: 已保存到指定目录：{report_dir}")
         save_markdown_report(report_dir, 'Historical_Trace_Report', assistant_response)
-        return assistant_response
 
     except Exception as e:
         print(f"❌ 在执行历史追溯工作流时发生严重错误: {e}")
         traceback.print_exc()
+        yield f"\n\n后台错误：{str(e)}"
         raise e

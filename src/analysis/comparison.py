@@ -85,22 +85,6 @@ def analyze_two_versions(
     key_columns: List[str],
     value_column: str
 ) -> Dict[str, pd.DataFrame]:
-    """
-    对两个版本的DataFrame进行结构化分析。
-
-    - 识别新增和删除的行。
-    - 对已修改的行，计算指定 value_column 的“异常得分”（即变化率），并按分值降序排序。
-
-    Args:
-        df_hist: 历史版本DataFrame。
-        df_latest: 最新版本DataFrame。
-        key_columns: 唯一标识行的关键列。
-        value_column: 用于计算异常分数的数值列。
-
-    Returns:
-        一个字典，包含三个DataFrame: 'added', 'deleted', 'modified'。
-        'modified' DataFrame会额外包含变化前后的值以及计算出的异常得分。
-    """
     # --- 1. 数据准备和合并 ---
     hist = df_hist.copy()
     latest = df_latest.copy()

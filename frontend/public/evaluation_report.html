@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>大小模型协同的电力数据质量链式追溯与智能分析系统</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-
+    <!--<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>-->
+    <script src="./js/chart.umd.min.js"></script>
     <style>
         html {
             box-sizing: border-box;
@@ -183,7 +183,7 @@
         .evaluation-table thead th {
             background-color: #F7FAFC;
             color: #A0AEC0;
-            font-size: 12px;
+            font-size: 14px;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.05em;
@@ -474,18 +474,25 @@
             new Chart(radarCtx, {
                 type: 'radar',
                 data: {
-                    labels: ['准确性', '效率', '洞察力', '自动化', '易用性'],
+                    labels: ['业务异常识别准确率', '数据处理效率', '归因追溯分析深度', '分析报告生成自动化', '业务集成便捷性'],
                     datasets: [
                         {
-                            label: '模型版本v2',
-                            data: [9.8, 9.5, 9.2, 10.0, 9.6],
+                            label: '传统人工审查方法',
+                            data: [7.5, 6.0, 7.0, 6.0, 7.0],
+                            backgroundColor: 'rgba(255, 159, 64, 0.2)',
+                            borderColor: 'rgba(255, 159, 64, 1)',
+                            pointBackgroundColor: 'rgba(255, 159, 64, 1)',
+                        },
+                        {
+                            label: '课题当前水平',
+                            data: [8.5, 8.0, 8.0, 8.5, 8.5],
                             backgroundColor: 'rgba(74, 144, 226, 0.2)',
                             borderColor: 'rgba(74, 144, 226, 1)',
                             pointBackgroundColor: 'rgba(74, 144, 226, 1)',
                         },
                         {
-                            label: '模型版本v1',
-                            data: [9.0, 8.5, 8.0, 8.8, 9.0],
+                            label: '课题预期水平',
+                            data: [9.0, 9.0, 9.0, 9.0, 9.0],
                             backgroundColor: 'rgba(80, 227, 194, 0.2)',
                             borderColor: 'rgba(80, 227, 194, 1)',
                             pointBackgroundColor: 'rgba(80, 227, 194, 1)',
@@ -493,19 +500,42 @@
                     ]
                 },
                 options: {
-                    responsive: true, maintainAspectRatio: false,
+                    responsive: true,
+                    maintainAspectRatio: false,
                     plugins: {
-                        title: { display: true, text: '模型版本v1 vs. 模型版本v2', font: titleFont, color: 'var(--text-color)' },
+                        title: { display: true, text: '系统核心能力多维度对比雷达图', font: titleFont, color: 'var(--text-color)' },
                         legend: { position: 'bottom', labels: { font: chartFont } }
                     },
                     scales: {
                         r: {
-                            angleLines: { color: 'var(--border-color)' },
-                            grid: { color: 'var(--border-color)' },
-                            pointLabels: { font: chartFont, color: 'var(--text-secondary)' },
-                            ticks: { display: false, backdropColor: 'var(--card-bg)' },
-                            suggestedMin: 6,
-                            suggestedMax: 10
+                            beginAtZero: false,
+                            min: 5,
+                            max: 10,
+                            ticks: {
+                                stepSize: 1,
+                                display: true,
+                                backdropColor: 'rgba(255, 255, 255, 0.9)',
+                                backdropPadding: 4,
+                                font: {
+                                    size: 12
+                                },
+                                color: '#718096',
+                                callback: function(value, index, values) {
+                                    return value.toString();
+                                }
+                            },
+                            grid: {
+                                color: '#E2E8F0'
+                            },
+                            angleLines: {
+                                color: '#E2E8F0'
+                            },
+                            pointLabels: {
+                                font: {
+                                    size: 13
+                                },
+                                color: '#4A5568'
+                            }
                         }
                     }
                 }
@@ -568,7 +598,7 @@
                 plugins: {
                   title: {
                     display: true,
-                    text: '推断出的异常类型及原因构成',
+                    text: '模型预测的异常类型及原因构成柱状图',
                     font: titleFont,
                     color: 'var(--text-color)'
                   },

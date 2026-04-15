@@ -3,7 +3,7 @@
     <el-header class="header">
       <div class="logo-title">
         <DataAnalysis class="icon"/>
-        <h1>基于大小模型协同的电力数据智能分析</h1>
+        <h1>大小模型协同的数据质量链式追溯与智能分析平台</h1>
       </div>
       <div class="header-extra-actions">
         <el-button type="primary" plain @click="goToReportPage">系统评测报告（模型卡片）</el-button>
@@ -19,7 +19,7 @@
                 <span><UploadFilled class="icon"/> 文件上传与控制</span>
                 <el-button type="danger" link @click="clearAllFiles" v-if="fileListForDisplay.length > 0 || isDemoMode">
                   <el-icon><Delete /></el-icon>
-                  一键清空
+                  一键清空(分析过程中请勿点击)
                 </el-button>
               </div>
             </template>
@@ -56,7 +56,7 @@
                   type="success"
                   plain
               >
-                加载示例湖北电力数据
+                加载评测省份1数据
               </el-button>
 
               <el-form
@@ -126,8 +126,8 @@
               <div class="card-header report-card-header">
                 <span><Document class="icon"/> 分析报告</span>
                 <div v-if="reportMarkdown">
-                  <el-button type="success" :icon="Download" @click="downloadMD">下载 Markdown</el-button>
-                  <el-button style="margin-left: 12px" type="danger" :icon="Download" @click="downloadPDF">下载 PDF</el-button>
+                  <el-button type="success" :icon="Download" @click="downloadMD" :disabled="isStreaming">下载 Markdown</el-button>
+                  <el-button style="margin-left: 12px" type="danger" :icon="Download" @click="downloadPDF" :disabled="isStreaming">下载 PDF</el-button>
                 </div>
               </div>
             </template>
@@ -147,7 +147,6 @@
   </el-container>
 </template>
 
-
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue';
 import type { UploadInstance, UploadProps, UploadRawFile, UploadUserFile, UploadFile } from 'element-plus';
@@ -165,16 +164,17 @@ const fileListForDisplay = ref<UploadUserFile[]>([]);
 
 const isLoading = ref(false);
 const reportMarkdown = ref('');
+const isStreaming = ref(false);
+
 
 const isDemoMode = ref(false);
 const demoColumns = ref<string[]>([]);
 const DEMO_FILES_DISPLAY = [
-  { name: '湖北-电量数据v1.xlsx' },
-  { name: '湖北-电量数据v2.xlsx' },
-  { name: '湖北-电量数据v3.xlsx' },
+  { name: '省份1_数据v1.xlsx' },
+  { name: '省份1_数据v2.xlsx' },
+  { name: '省份1_数据v3.xlsx' },
 ];
 
-// 'availableColumns' now acts as the "golden standard" for headers.
 const availableColumns = ref<string[]>([]);
 const analysisParams = ref({
   keyColumns: [] as string[],
@@ -203,12 +203,6 @@ const reportHtml = computed(() => {
   return '';
 });
 
-/**
- * [HELPER] Asynchronously extracts headers from an Excel file.
- * @param file The raw file to parse.
- * @returns A promise that resolves to an array of header strings.
- * @throws An error if the file is invalid or cannot be parsed.
- */
 const getHeadersFromFile = async (file: UploadRawFile): Promise<string[]> => {
   try {
     const data = await file.arrayBuffer();
@@ -218,107 +212,67 @@ const getHeadersFromFile = async (file: UploadRawFile): Promise<string[]> => {
     const worksheet = workbook.Sheets[firstSheetName];
     const headers = (XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] as string[]) || [];
     if (headers.length === 0) throw new Error('无法从文件中读取有效的列头。');
-    return headers.filter(h => h); // Filter out any empty/null headers
+    return headers.filter(h => h);
   } catch (error: any) {
     console.error('解析Excel文件失败:', error);
     throw new Error(`解析文件 "${file.name}" 失败: ${error.message || '请检查文件格式。'}`);
   }
 };
 
-/**
- * [HELPER] Compares two string arrays for equality (content and order).
- * @param headers1 First array of headers.
- * @param headers2 Second array of headers.
- * @returns True if the arrays are identical, false otherwise.
- */
 const areHeaderArraysEqual = (headers1: string[], headers2: string[]): boolean => {
   if (headers1.length !== headers2.length) return false;
   return JSON.stringify(headers1) === JSON.stringify(headers2);
 };
 
 const handleFileChange: UploadProps['onChange'] = async (uploadFile: UploadFile) => {
-  // We only process files that have just been added by the user ('ready' status).
   if (uploadFile.status !== 'ready') {
     return;
   }
-
-  // If in demo mode, any file upload action should switch to normal mode.
-  // We clear all existing state to ensure a clean start with the newly uploaded files.
   if (isDemoMode.value) {
     isDemoMode.value = false;
     fileListForDisplay.value = [];
     filesToUpload.value = [];
     availableColumns.value = [];
   }
-
-  // Helper function to reject a file and remove it from the upload list.
   const rejectFile = (message: string) => {
     ElMessage.error({ message, duration: 5000 });
-    // This is the correct way to remove a file: use the component's own method.
-    // It will trigger the on-remove handler, which keeps our state consistent.
     uploadRef.value?.handleRemove(uploadFile);
   };
-
-  // --- Validation Step 1: Duplicate File Name ---
-  // Check against our list of *already validated* and accepted files.
   if (fileListForDisplay.value.some(f => f.name === uploadFile.name)) {
     rejectFile(`文件 "${uploadFile.name}" 已存在，请勿重复上传。`);
     return;
   }
-
-  // --- Validation Step 2: File Parsing and Header Consistency ---
   try {
     const currentHeaders = await getHeadersFromFile(uploadFile.raw as UploadRawFile);
-
-    // If this is the first valid file, its headers become the standard.
     if (availableColumns.value.length === 0) {
       availableColumns.value = currentHeaders;
-      // When a new file standard is established, reset dependent parameters.
       analysisParams.value.keyColumns = [];
       analysisParams.value.valueColumn = '';
     } else {
-      // A standard already exists. The new file's headers must match it.
       if (!areHeaderArraysEqual(availableColumns.value, currentHeaders)) {
         rejectFile(`文件 "${uploadFile.name}" 的列字段与已上传文件不一致，已拒绝。`);
         return;
       }
     }
-
-    // --- Success ---
-    // If all validations pass, we add the file to our own state arrays.
-    // The UI will update automatically because :file-list is bound to fileListForDisplay.
     fileListForDisplay.value.push(uploadFile);
     filesToUpload.value.push(uploadFile.raw as UploadRawFile);
-
   } catch (error: any) {
-    // This catches errors from getHeadersFromFile (e.g., corrupt file, no headers).
     rejectFile(error.message || `文件 "${uploadFile.name}" 格式错误或无法解析。`);
   }
 };
 
 const handleFileRemove: UploadProps['onRemove'] = (removedFile, currentFiles) => {
   ElMessage.info(`文件 "${removedFile.name}" 已被移除。`);
-
-  // The `currentFiles` argument from the event is the source of truth for the list's state after removal.
-  // We simply sync our own state to match it.
   fileListForDisplay.value = currentFiles;
   filesToUpload.value = currentFiles.map(f => f.raw as UploadRawFile).filter(Boolean);
-
-  // If the removed file was a real file (not a demo file), ensure we are not in demo mode.
   if (removedFile.raw) {
     isDemoMode.value = false;
   }
-
-  // [FIX] If we were in demo mode AND the last demo file was just removed,
-  // we must exit demo mode and clear the associated state.
   if (isDemoMode.value && currentFiles.length === 0) {
     isDemoMode.value = false;
     analysisParams.value.keyColumns = [];
     analysisParams.value.valueColumn = '';
   }
-
-  // If the last real file is removed, we must clear the header standard,
-  // allowing a new set of files with different columns to be uploaded.
   if (filesToUpload.value.length === 0 && !isDemoMode.value) {
     availableColumns.value = [];
     analysisParams.value.keyColumns = [];
@@ -326,10 +280,8 @@ const handleFileRemove: UploadProps['onRemove'] = (removedFile, currentFiles) =>
   }
 };
 
-
 const loadDemoData = () => {
-  // Clear any existing real files before loading demo data.
-  clearAllFiles(true); // Pass true to suppress the success message
+  clearAllFiles(true);
   isDemoMode.value = true;
   fileListForDisplay.value = [...DEMO_FILES_DISPLAY] as UploadUserFile[];
   demoColumns.value = ['数据日期', '省份', '行业编码', '行业名称', '电量'];
@@ -337,7 +289,7 @@ const loadDemoData = () => {
     keyColumns: ['数据日期', '省份', '行业编码'],
     valueColumn: '电量',
   };
-  ElMessage.success('湖北电力数据示例已加载！');
+  ElMessage.success('示例数据已加载！');
 };
 
 const clearAllFiles = (isInternalCall = false) => {
@@ -354,33 +306,54 @@ const clearAllFiles = (isInternalCall = false) => {
   }
 };
 
-
 const startAnalysis = async () => {
   if (isStartButtonDisabled.value) return;
 
   isLoading.value = true;
+  isStreaming.value = true;
   reportMarkdown.value = '';
+  let isFirstChunk = true;
+
+  const callbacks = {
+    onChunk: (chunk: string) => {
+      if (isFirstChunk) {
+        isLoading.value = false;
+        isFirstChunk = false;
+      }
+      reportMarkdown.value += chunk;
+      nextTick(() => {
+        if (reportScrollbar.value && reportScrollbar.value.wrapRef) {
+          const scrollContainer = reportScrollbar.value.wrapRef;
+          scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        }
+      });
+    },
+    onClose: () => {
+      if(isLoading.value) {
+        isLoading.value = false;
+        ElMessage.success('分析完成，未生成任何内容。');
+      } else {
+        ElMessage.success('分析完成！');
+        isStreaming.value = false;
+      }
+    },
+    onError: (error: Error) => {
+      const errorMessage = error.message || '请求失败，请检查后端服务是否正常';
+      ElMessage.error(`分析出错: ${errorMessage}`);
+      console.error(error);
+      isLoading.value = false;
+      isStreaming.value = false;
+    }
+  };
 
   try {
-    let result;
     if (isDemoMode.value) {
-      result = await analyzeDemo(analysisParams.value);
+      await analyzeDemo(analysisParams.value, callbacks);
     } else {
-      result = await analyzeFiles(filesToUpload.value, analysisParams.value);
-    }
-
-    if (result.success) {
-      reportMarkdown.value = result.report;
-      ElMessage.success('分析完成！');
-    } else {
-      ElMessage.error(result.report || '分析失败，未知错误');
+      await analyzeFiles(filesToUpload.value, analysisParams.value, callbacks);
     }
   } catch (error: any) {
-    const errorMessage = error.response?.data?.detail || error.message || '请求失败，请检查后端服务是否正常';
-    ElMessage.error(`分析出错: ${errorMessage}`);
-    console.error(error);
-  } finally {
-    isLoading.value = false;
+    callbacks.onError(error);
   }
 };
 
@@ -523,4 +496,3 @@ const goToReportPage = () => {
   margin-left: 0px;
 }
 </style>
-

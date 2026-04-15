@@ -6,6 +6,7 @@ services:
     volumes:
       - ./config.yaml:/config.yaml
       - ./.env:/app/.env
+      - ./data:/app/data
     environment:
       - PYTHONUNBUFFERED=1
 

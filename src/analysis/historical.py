@@ -26,6 +26,7 @@ def generate_historical_trace_table(
     根据多个版本的DataFrame生成历史轨迹表，并根据“异常得分”筛选出Top-N条记录。
     """
     if not all_dfs:
+        print("  - 未提供任何数据版本，无法生成历史轨迹表。")
         return pd.DataFrame()
 
     for i, df in enumerate(all_dfs):
@@ -41,8 +42,15 @@ def generate_historical_trace_table(
         **{col: (col, 'last') for col in combined_df.columns if col not in key_columns + [value_column, '_version_index']}
     ).reset_index()
 
+    print("  - 正在筛选出历史值发生变化的记录...")
+
+
     aggregated = aggregated[aggregated['历史值列表'].apply(lambda x: len(set(x)) > 1)].copy()
+
+    print("  - 正在计算每条记录的差值和变化率...")
+
     if aggregated.empty:
+        print("  - 滴滴，在所有数据版本中，未发现任何记录的核心数值发生过变化。")
         return pd.DataFrame()
 
     def get_diff_list(h):

@@ -24,6 +24,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 分别将 backend 和 src 目录复制到镜像中
 COPY backend/ .
 COPY src/ ./src/
+COPY data/ /app/data/
 
 # 声明服务将监听8000端口
 EXPOSE 8000
